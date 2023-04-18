@@ -1,0 +1,24 @@
+name: CI
+
+on: [push]
+
+jobs:
+  build-windows:
+    runs-on: windows-2019
+
+    steps:
+    - name: Checkout sources
+      uses: actions/checkout@v3
+
+    - name: Configure and build
+      shell: cmd
+      run: |
+        call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        cmake -S . -B b -DCMAKE_BUILD_TYPE=Release -G "NMake Makefiles"
+        cmake --build b || exit /b 1
+
+    - name: Runtime
+      shell: cmd
+      run: |
+        call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
+        mpiexec -n 4 b\test-mpi.exe 
