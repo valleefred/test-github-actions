@@ -10,15 +10,37 @@ jobs:
     - name: Checkout sources
       uses: actions/checkout@v3
 
-    - name: Configure and build
+    - name: Install wget
+      shell: cmd
+      run: choco install wget --no-progress
+
+    - name: Install MS-MPI
       shell: cmd
       run: |
+        wget -nv https://download.microsoft.com/download/a/5/2/a5207ca5-1203-491a-8fb8-906fd68ae623/msmpisdk.msi
+        msmpisdk.msi /passive
+        wget -nv https://download.microsoft.com/download/a/5/2/a5207ca5-1203-491a-8fb8-906fd68ae623/msmpisetup.exe
+        msmpisetup.exe /unattend
+
+    # Strawberry is incompatible with cmake !
+    - name: Configure and build
+      shell: cmd
+      env:
+        MSMPI_INC: C:\Program Files (x86)\Microsoft SDKs\MPI\Include\
+        MSMPI_LIB32: C:\Program Files (x86)\Microsoft SDKs\MPI\Lib\x86\
+        MSMPI_LIB64: C:\Program Files (x86)\Microsoft SDKs\MPI\Lib\x64\
+      run: |
+        set PATH=%PATH:C:\Strawberry\=__disabled__%
         call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
         cmake -S . -B b -DCMAKE_BUILD_TYPE=Release -G "NMake Makefiles"
         cmake --build b || exit /b 1
 
     - name: Runtime
       shell: cmd
+      env:
+        MSMPI_BENCHMARKS: C:\Program Files\Microsoft MPI\Benchmarks\
+        MSMPI_BIN: C:\Program Files\Microsoft MPI\Bin\
       run: |
+        set PATH=%MSMPI_BIN%;%PATH%
         call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
         mpiexec -n 4 b\test-mpi.exe 
