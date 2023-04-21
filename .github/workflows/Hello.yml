@@ -1,0 +1,13 @@
+name: Hello
+
+on:
+  workflow_dispatch:
+
+jobs:
+  hello:
+    runs-on: windows-2019
+
+    steps:
+    - name: Hello
+      shell: cmd
+      run: echo Hello from main
