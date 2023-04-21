@@ -1,1 +1,13 @@
+name: Goodbye
 
+on:
+  workflow_dispatch:
+
+jobs:
+  goodbye:
+    runs-on: windows-2019
+
+    steps:
+    - name: Goodbye
+      shell: cmd
+      run: echo Goodbye from main
