@@ -1,6 +1,6 @@
 name: CI
 
-on: [push]
+on: [push, workflow_dispatch]
 
 jobs:
   build-windows:
@@ -14,11 +14,16 @@ jobs:
       shell: cmd
       run: choco install wget --no-progress
 
-    - name: Install MS-MPI
+    - name: Install MS-MPI SDK
       shell: cmd
       run: |
         wget -nv https://download.microsoft.com/download/a/5/2/a5207ca5-1203-491a-8fb8-906fd68ae623/msmpisdk.msi
         msmpisdk.msi /passive
+
+    - name: Install MS-MPI Runtime
+      if: ${{ github.event_name == 'push' }}
+      shell: cmd
+      run: |
         wget -nv https://download.microsoft.com/download/a/5/2/a5207ca5-1203-491a-8fb8-906fd68ae623/msmpisetup.exe
         msmpisetup.exe /unattend
 
@@ -36,6 +41,7 @@ jobs:
         cmake --build b || exit /b 1
 
     - name: Runtime
+      if: ${{ github.event_name == 'push' }}
       shell: cmd
       env:
         MSMPI_BENCHMARKS: C:\Program Files\Microsoft MPI\Benchmarks\
@@ -44,3 +50,19 @@ jobs:
         set PATH=%MSMPI_BIN%;%PATH%
         call "C:\Program Files (x86)\Microsoft Visual Studio\2019\Enterprise\VC\Auxiliary\Build\vcvars64.bat"
         mpiexec -n 4 b\test-mpi.exe 
+
+    - name: Create distrib
+      if: ${{ github.event_name == 'workflow_dispatch' }}
+      shell: cmd
+      run: 7z a test-mpi.zip b\test-mpi.exe
+
+    - name: Upload asset
+      if: ${{ github.event_name == 'workflow_dispatch' }}
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_API: ${{ github.api_url }}/repos/${{ github.repository }}
+      run: |
+        url=$(curl --silent --header "authorization: Bearer $GITHUB_TOKEN" --header "Content-Type: application/json" $GH_API/releases/tags/nightly | jq -r '.upload_url' | grep -o '.*assets')
+        echo $url
+        curl --retry 20 --retry-delay 1 --retry-max-time 40 --max-time 200000 --limit-rate 5M --url $url?name=test-mpi-beta.zip --header "authorization: Bearer $GITHUB_TOKEN" --header "Content-Type: application/zip" --data-binary @test-mpi.zip
