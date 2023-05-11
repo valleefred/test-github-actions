@@ -1,6 +1,8 @@
 name: CI
 
-on: [push, workflow_dispatch]
+on:
+  # push:
+  workflow_dispatch:
 
 jobs:
   build-windows:
@@ -21,7 +23,6 @@ jobs:
         msmpisdk.msi /passive
 
     - name: Install MS-MPI Runtime
-      if: ${{ github.event_name == 'push' }}
       shell: cmd
       run: |
         wget -nv https://download.microsoft.com/download/a/5/2/a5207ca5-1203-491a-8fb8-906fd68ae623/msmpisetup.exe
@@ -41,7 +42,6 @@ jobs:
         cmake --build b || exit /b 1
 
     - name: Runtime
-      if: ${{ github.event_name == 'push' }}
       shell: cmd
       env:
         MSMPI_BENCHMARKS: C:\Program Files\Microsoft MPI\Benchmarks\
@@ -52,12 +52,10 @@ jobs:
         mpiexec -n 4 b\test-mpi.exe 
 
     - name: Create distrib
-      if: ${{ github.event_name == 'workflow_dispatch' }}
       shell: cmd
       run: 7z a test-mpi.zip b\test-mpi.exe
 
     - name: Upload asset
-      if: ${{ github.event_name == 'workflow_dispatch' }}
       shell: bash
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
