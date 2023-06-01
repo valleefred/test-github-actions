@@ -32,10 +32,46 @@ jobs:
         7z a 100M.zip 100M
         dir
 
-    - name: Upload files
+    # - name: Dump context
+    #   uses: crazy-max/ghaction-dump-context@v2
+
+    - name: Delete previous nightly release and tag
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const { owner, repo } = context.repo;
+          try {
+            const { data: { id } } = await github.rest.repos.getReleaseByTag({ owner, repo, tag: "nightly" });
+            await github.rest.repos.deleteRelease({ owner, repo, release_id: id });
+            console.log("Previous nightly release id", id, "was deleted.")
+          } catch (e) {
+            console.log("Previous nightly release not found !");
+          }
+          try {
+            await github.rest.git.deleteRef({ owner, repo, ref: "tags/nightly" });
+            console.log("Previous nightly tag was deleted.")
+          } catch (e) {
+            console.log("Previous nightly tag not found !");
+          }
+
+    - name: Create nightly tag, release and upload assets
       uses: softprops/action-gh-release@v1
       with:
+        body: |
+          Test-github-actions's nightly release. Compiled on *release* settings.
+
+          **Don't use it for production**
+
+          Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+
+          Ref: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+        draft: false
+        prerelease: true
+        name: Nightly
         tag_name: nightly
+        target_commitish: "refs/heads/main"
+        generate_release_notes: true
         files: |
           1k.zip
           10k.zip
