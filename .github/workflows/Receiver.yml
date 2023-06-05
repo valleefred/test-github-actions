@@ -1,0 +1,43 @@
+name: Receiver
+
+on:
+  repository_dispatch:
+    types: [linux-done, windows-done]
+
+jobs:
+  # context:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: crazy-max/ghaction-dump-context@v2
+
+  linux:
+    if: github.event.action == 'linux-done'
+    name: More linux work
+    runs-on: ubuntu-latest
+    steps:
+    - run: |
+        date +%T
+        sleep 5
+        date +%T
+    - uses: actions/github-script@v6
+      with:
+        github-token: ${{ secrets.DISPATCH_TO_ACTIONS2 }}
+        script: |
+            const { owner, repo } = context.repo;
+            await github.rest.repos.createDispatchEvent({ owner, repo: "test-github-actions2", event_type: "linux-done" });
+
+  windows:
+    if: github.event.action == 'windows-done'
+    name: More windows work
+    runs-on: windows-2019
+    steps:
+    - run: |
+        date +%T
+        sleep 5
+        date +%T
+    - uses: actions/github-script@v6
+      with:
+        github-token: ${{ secrets.DISPATCH_TO_ACTIONS2 }}
+        script: |
+            const { owner, repo } = context.repo;
+            await github.rest.repos.createDispatchEvent({ owner, repo: "test-github-actions2", event_type: "windows-done" });

@@ -1,0 +1,33 @@
+name: Dispatcher
+
+on:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: Linux work
+    runs-on: ubuntu-latest
+    steps:
+    - run: |
+        date +%T
+        sleep 5
+        date +%T
+    - uses: actions/github-script@v6
+      with:
+        script: |
+            const { owner, repo } = context.repo;
+            await github.rest.repos.createDispatchEvent({ owner, repo, event_type: "linux-done" });
+
+  windows:
+    name: Windows work
+    runs-on: windows-2019
+    steps:
+    - run: |
+        date +%T
+        sleep 30
+        date +%T
+    - uses: actions/github-script@v6
+      with:
+        script: |
+            const { owner, repo } = context.repo;
+            await github.rest.repos.createDispatchEvent({ owner, repo, event_type: "windows-done" });
