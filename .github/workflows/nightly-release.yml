@@ -2,6 +2,19 @@ name: Nightly Release
 
 on:
   workflow_dispatch:
+    inputs:
+      how-upload:
+        description: How to upload assets
+        type: choice
+        options:
+        - softprops
+        - ncipollo
+        - curl
+        default: softprops
+      delete-previous:
+        description: Delete previous tag and release ?
+        type: boolean
+        default: true
   # schedule:
   #   - cron:  "0 1 * * 1-5"
 
@@ -10,6 +23,10 @@ jobs:
     runs-on: windows-2019
 
     steps:
+    - shell: bash
+      run: |
+        echo Run: ${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}
+
     - name: Create files of different sizes
       shell: bash
       run: |
@@ -36,6 +53,7 @@ jobs:
     #   uses: crazy-max/ghaction-dump-context@v2
 
     - name: Delete previous nightly release and tag
+      if: github.event_name != 'workflow_dispatch' || inputs.delete-previous
       uses: actions/github-script@v6
       with:
         script: |
@@ -54,7 +72,9 @@ jobs:
             console.log("Previous nightly tag not found !");
           }
 
-    - name: Create nightly tag, release and upload assets
+    # request to https://uploads.github.com/repos/dynawo/....zip failed, reason: read ECONNRESET (sometimes)
+    - name: Create nightly tag, release and upload assets with softprops
+      if: github.event_name == 'workflow_dispatch' && inputs.how-upload == 'softprops'
       uses: softprops/action-gh-release@v1
       with:
         body: |
@@ -66,12 +86,14 @@ jobs:
 
           Ref: ${{ github.ref }}
           SHA: ${{ github.sha }}
+          Run: ${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}
+
+          *Created by softprops*
         draft: false
         prerelease: true
         name: Nightly
         tag_name: nightly
-        target_commitish: "refs/heads/main"
-        generate_release_notes: true
+        target_commitish: 'refs/heads/main'
         files: |
           1k.zip
           10k.zip
@@ -80,18 +102,51 @@ jobs:
           10M.zip
           100M.zip
 
+    - name: Create nightly tag, release and upload assets with ncipollo
+      if: github.event_name == 'workflow_dispatch' && inputs.how-upload == 'ncipollo'
+      uses: ncipollo/release-action@v1
+      with:
+        body: |
+          Test-github-actions's nightly release. Compiled on *release* settings.
+
+          **Don't use it for production**
+
+          Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+
+          Ref: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          Run: ${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}
+
+          *Created by ncipollo*
+        draft: false
+        prerelease: true
+        name: Nightly
+        tag: nightly
+        commit: 'refs/heads/main'
+        allowUpdates: true
+        omitBodyDuringUpdate: true
+        artifacts: |
+          1k.zip
+          10k.zip
+          100k.zip
+          1M.zip
+          10M.zip
+          100M.zip
+
     # 1k & 10k => OK
-    # 100k => curl: (55) Failed sending data to the peer
-    # - shell: bash
-    #   env:
-    #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    #     GH_API: ${{ github.api_url }}/repos/${{ github.repository }}
-    #   run: |
-    #     url=$(curl --silent --header "authorization: Bearer $GITHUB_TOKEN" --header "Content-Type: application/json" $GH_API/releases/tags/nightly | jq -r '.upload_url' | grep -o '.*assets')
-    #     echo $url
-    #     curl --retry 20 --retry-delay 1 --retry-max-time 40 --max-time 200000 --limit-rate 5M --url $url?name=1k.zip --header "authorization: Bearer $GITHUB_TOKEN" --header "Content-Type: application/zip" --data-binary @1k.zip
-    #     curl --retry 20 --retry-delay 1 --retry-max-time 40 --max-time 200000 --limit-rate 5M --url $url?name=10k.zip --header "authorization: Bearer $GITHUB_TOKEN" --header "Content-Type: application/zip" --data-binary @10k.zip
-    #     curl --retry 20 --retry-delay 1 --retry-max-time 40 --max-time 200000 --limit-rate 5M --url $url?name=100k.zip --header "authorization: Bearer $GITHUB_TOKEN" --header "Content-Type: application/zip" --data-binary @100k.zip
-    #     curl --retry 20 --retry-delay 1 --retry-max-time 40 --max-time 200000 --limit-rate 5M --url $url?name=1M.zip --header "authorization: Bearer $GITHUB_TOKEN" --header "Content-Type: application/zip" --data-binary @1M.zip
-    #     curl --retry 20 --retry-delay 1 --retry-max-time 40 --max-time 200000 --limit-rate 5M --url $url?name=10M.zip --header "authorization: Bearer $GITHUB_TOKEN" --header "Content-Type: application/zip" --data-binary @10M.zip
-    #     curl --retry 20 --retry-delay 1 --retry-max-time 40 --max-time 200000 --limit-rate 5M --url $url?name=100M.zip --header "authorization: Bearer $GITHUB_TOKEN" --header "Content-Type: application/zip" --data-binary @100M.zip
+    # 100k => curl: (55) Failed sending data to the peer (sometimes)
+    - name: Upload assets with curl
+      if: github.event_name == 'workflow_dispatch' && inputs.how-upload == 'curl'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_API: ${{ github.api_url }}/repos/${{ github.repository }}
+      run: |
+        url=$(curl --silent --header "authorization: Bearer $GITHUB_TOKEN" --header "Content-Type: application/json" $GH_API/releases/tags/nightly | jq -r '.upload_url' | grep -o '.*assets')
+        echo $url
+        curl --retry 20 --retry-delay 1 --retry-max-time 40 --max-time 200000 --limit-rate 5M --url $url?name=1k.zip --header "authorization: Bearer $GITHUB_TOKEN" --header "Content-Type: application/zip" --data-binary @1k.zip
+        curl --retry 20 --retry-delay 1 --retry-max-time 40 --max-time 200000 --limit-rate 5M --url $url?name=10k.zip --header "authorization: Bearer $GITHUB_TOKEN" --header "Content-Type: application/zip" --data-binary @10k.zip
+        curl --retry 20 --retry-delay 1 --retry-max-time 40 --max-time 200000 --limit-rate 5M --url $url?name=100k.zip --header "authorization: Bearer $GITHUB_TOKEN" --header "Content-Type: application/zip" --data-binary @100k.zip
+        curl --retry 20 --retry-delay 1 --retry-max-time 40 --max-time 200000 --limit-rate 5M --url $url?name=1M.zip --header "authorization: Bearer $GITHUB_TOKEN" --header "Content-Type: application/zip" --data-binary @1M.zip
+        curl --retry 20 --retry-delay 1 --retry-max-time 40 --max-time 200000 --limit-rate 5M --url $url?name=10M.zip --header "authorization: Bearer $GITHUB_TOKEN" --header "Content-Type: application/zip" --data-binary @10M.zip
+        curl --retry 20 --retry-delay 1 --retry-max-time 40 --max-time 200000 --limit-rate 5M --url $url?name=100M.zip --header "authorization: Bearer $GITHUB_TOKEN" --header "Content-Type: application/zip" --data-binary @100M.zip
