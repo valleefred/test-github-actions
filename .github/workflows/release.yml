@@ -1,0 +1,107 @@
+name: Create or update release and upload assets
+
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      runs_on:
+        type: choice
+        options:
+          - ubuntu-latest
+          - windows-2019
+        default: ubuntu-latest
+      tag_name:
+        type: string
+        default: nightly
+      target_commitish:
+        type: string
+        default: heads/main
+      release_name:
+        type: string
+        default: Nightly
+
+jobs:
+  release:
+    runs-on: ${{ github.event_name != 'workflow_dispatch' && 'ubuntu-latest' || inputs.runs_on }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: How to use release script
+        if: false
+        id: STEP-ID
+        uses: actions/github-script@v6
+        env:                                # Input parameters for release script
+          owner: valleefred                 # owner of the repository (current owner by default)
+          repo: test-github-actions         # repository (current repo by default)
+          tag_name: nightly                 # required tag for the release (created if not exist)
+          target_commitish: heads/main      # commit reference to create tag (required only if tag doesn't exist already)
+          release_name: Nightly release     # name for the release (value of tag_name by default)
+          delete_release: false             # set to true to always delete an existing release (false by default to delete it only if necessary)
+          append_body: true                 # in case of update, set to true to append or false to prepend new body to body of existing release (none by default to replace body) 
+          body: |                           # none by default
+            description body of the release
+            maybe multilines
+            **markdown** is allowed
+          draft: false                      # set to true to mark release as draft (false by default)
+          prerelease: true                  # set to true to mark release as prerelease (false by default)
+          discussion_category_name: Ideas   # create and link to the release a discussion of the specified category (none by default)
+          generate_release_notes: true      # set to true to automatically generate release notes (false by default)
+          fail_on_files_errors: true        # set to true to fail script if error occurs while deleting or uploading assets (false by default)
+          files: |                          # optional glob patterns to identify assets (see https://github.com/actions/toolkit/tree/main/packages/glob)
+            *.txt
+            !toto.txt
+
+        with:                               # Input parameters for github-script action (see https://github.com/actions/github-script/tree/v6/)
+          github-token: ${{ secrets.PAT }}  # optional separate GitHub token to enhance permissions (secrets.GITHUB_TOKEN by default)
+          retries: 3                        # optional number of retries for request failures (none by default)
+          script: |                         # minimum script to call release script
+            const release = require('.github/workflows/release.js')
+            await release({github, context, core, glob})
+
+          # The following outputs can be accessed via ${{ steps.STEP-ID.outputs }} from subsequent steps:
+          #   html_url    Github.com URL for the release
+          #   release_id  Release ID as a string
+          #   upload_url  URL for uploading assets to the release
+          #   assets      JSON array containing information about each uploaded asset, in the format given at https://docs.github.com/en/rest/releases/assets#get-a-release-asset (minus the uploader field)
+
+      - name: Create tag and release
+        uses: actions/github-script@v6
+        env:
+          tag_name: ${{ github.event_name != 'workflow_dispatch' && 'nightly' || inputs.tag_name }}
+          target_commitish: ${{ github.event_name != 'workflow_dispatch' && 'heads/main' || inputs.target_commitish }}
+          release_name: ${{ github.event_name != 'workflow_dispatch' && 'Nightly' || inputs.release_name }}
+          draft: false
+          prerelease: true
+          body: |
+            Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+
+            Ref: ${{ github.ref }}
+            SHA: ${{ github.sha }}
+            *Created with github-script*
+        with:
+          retries: 3
+          script: |
+            const release = require('.github/workflows/release.js')
+            await release({github, context, core, glob})
+
+      - name: Upload assets
+        uses: actions/github-script@v6
+        env:
+          tag_name: ${{ github.event_name != 'workflow_dispatch' && 'nightly' || inputs.tag_name }}
+          draft: false
+          prerelease: true
+          append_body: true
+          body: |
+            Run: ${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}
+          files: |
+            *.zip
+            README.md
+            *.cpp
+            .git*
+            !.git
+            !.gitignore
+        with:
+          retries: 3
+          script: |
+            const release = require('.github/workflows/release.js')
+            await release({github, context, core, glob})
