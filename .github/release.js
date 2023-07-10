@@ -43,21 +43,23 @@ module.exports = async ({github, context, core, glob}) => {
     const {
       owner,                      // owner of the repository (current owner by default)
       repo,                       // repository (current repo by default)
-      tag_name,                   // required tag for the release (created if not exist)
-      target_commitish,           // commit reference to create tag (required only if tag doesn't exist already)
-      files,                      // optional glob patterns to identify assets (see https://github.com/actions/toolkit/tree/main/packages/glob)
-      release_name,               // name for the release (value of tag_name by default)
-      body,                       // description body of the release (none by default), maybe multilines, **markdown** is allowed
+      release_id,                 // id of the release to update, may be 'latest' to identify the latest release (required if no tag_name is given)
+      tag_name,                   // tag to identify the release to update or to create a new release, created if not exist (required if no release_id is given)
+      target_commitish,           // commit reference to create tag (required only if tag_name doesn't exist already)
+      files,                      // optional glob patterns to identify files to upload as assets (see https://github.com/actions/toolkit/tree/main/packages/glob)
+      release_name,               // name for the release (value of tag_name by default when creating a release)
+      body,                       // description body of the release (none by default), may be multilines, **markdown** is allowed
       draft,                      // set to true to mark release as draft (false by default)
       prerelease,                 // set to true to mark release as prerelease (false by default)
       discussion_category_name,   // create and link to the release a discussion of the specified category (none by default)
       generate_release_notes,     // set to true to automatically generate release notes (false by default)
       delete_release,             // set to true to always delete an existing release (false by default to delete it only if necessary)
       append_body,                // in case of update, set to true to append or false to prepend new body to body of existing release (none by default to replace body) 
-      fail_on_files_errors,       // set to true to fail script if error occurs while deleting or uploading assets (false by default)
+      fail_on_files_errors,       // set to true to cause the script to fail if an error occurs while deleting or uploading assets (false by default)
     } = {
       owner:                      getInput('owner', context.repo.owner),
       repo:                       getInput('repo', context.repo.repo),
+      release_id:                 getInput('release_id'),
       tag_name:                   getInput('tag_name'),
       target_commitish:           getInput('target_commitish'),
       files:                      getInput('files'),
@@ -76,6 +78,7 @@ module.exports = async ({github, context, core, glob}) => {
     console.log({
       owner,
       repo,
+      release_id,
       tag_name,
       target_commitish,
       files,
@@ -91,61 +94,123 @@ module.exports = async ({github, context, core, glob}) => {
     });
     */
 
-    if (!tag_name) {
-      throw new Error("'tag_name' is mandatory to create or identify a release");
+    if (!tag_name && !release_id) {
+      throw new Error("'release_id' or 'tag_name' is mandatory to identify a release");
+    }
+
+    if (release_id) {
+      console.log(`⚠️'tag_name=${tag_name}' is ignored since 'release_id=${release_id}' is used`);
+      console.log(`⚠️'target_commitish=${target_commitish}' is ignored since 'release_id=${release_id}' is used`);
     }
 
     let sha_tag;
-    try {
-      ({ data: { object: { sha: sha_tag } } } =
-        await github.rest.git.getRef({
-          owner,
-          repo,
-          ref: `tags/${tag_name}`
-        })
-      );
-      console.log(`💡SHA for 'tag_name=${tag_name}' is: ${sha_tag}`);
-    } catch (error) {
-      console.log(`💡Unable to get SHA for 'tag_name=${tag_name}': ${error.message}`);
+    if (tag_name) {
+      if (release_id) {
+        console.log(`⚠️'tag_name=${tag_name}' is ignored since 'release_id=${release_id}' is used`);
+      } else {
+        try {
+          ({ data: { object: { sha: sha_tag } } } =
+            await github.rest.git.getRef({
+              owner,
+              repo,
+              ref: `tags/${tag_name}`
+            })
+          );
+          console.log(`💡SHA for 'tag_name=${tag_name}' is: ${sha_tag}`);
+        } catch (error) {
+          console.log(`💡Unable to get SHA for 'tag_name=${tag_name}': ${error.message}`);
+        }
+      }
     }
 
     let sha_target;
     if (target_commitish) {
+      if (release_id) {
+        console.log(`⚠️'target_commitish=${target_commitish}' is ignored since 'release_id=${release_id}' is used`);
+      } else {
+        try {
+          ({ data: { object: { sha: sha_target } } } =
+            await github.rest.git.getRef({
+              owner,
+              repo,
+              ref: target_commitish
+            })
+          );
+          console.log(`💡SHA for 'target_commitish=${target_commitish}' is: ${sha_target}`);
+        } catch (error) {
+          throw new Error(`Unable to get SHA for 'target_commitish=${target_commitish}': ${error.message}`);
+        }
+      }
+    }
+
+    let release;
+    if ((release_id || "").toUpperCase() === "LATEST") {
       try {
-        ({ data: { object: { sha: sha_target } } } =
-          await github.rest.git.getRef({
+        ({ data: release } =
+          await github.rest.repos.getLatestRelease({
             owner,
-            repo,
-            ref: target_commitish
+            repo
           })
         );
-        console.log(`💡SHA for 'target_commitish=${target_commitish}' is: ${sha_target}`);
+        console.log(`🎁Found the latest published release with id ${release.id} and tag '${release.tag_name}'`);
       } catch (error) {
-        throw new Error(`Unable to get SHA for 'target_commitish=${target_commitish}': ${error.message}`);
+        throw new Error(`No latest published release is available: ${error.message}`);
+      }
+    }
+
+    const release_id_int = release_id?.parseInt();
+    if (!release && release_id_int) {
+      try {
+        ({ data: release } =
+          await github.rest.repos.getRelease({
+            owner,
+            repo,
+            release_id: release_id_int
+          })
+        );
+        console.log(`🎁Found the ${release.draft && 'draft ' || ''}release for id ${release.id} and with tag '${release.tag_name}'`);
+      } catch (error) {
+        throw new Error(`Unable to get a release for 'release_id=${release_id}': ${error.message}`);
       }
     }
 
     // getReleaseByTag() is unable to find draft releases
-    let release;
-    try {
-      const iterator = github.paginate.iterator(github.rest.repos.listReleases, {
-        owner,
-        repo,
-        per_page
-      });
-      for await (const { data: releases } of iterator) {
-        release = releases.find(item => item.tag_name === tag_name);
-        if (release) {
-          break;
-        }
+    // and non-draft couldn't be converted to draft
+    if (!release && !draft) {
+      try {
+        ({ data: release } =
+          await github.rest.repos.getReleaseByTag({
+            owner,
+            repo,
+            tag: tag_name
+          })
+        );
+        console.log(`🎁Found the published release with id ${release.id} for tag '${release.tag_name}'`);
+      } catch (error) {
       }
-    } catch (error) {
-      throw new Error(`Unable to retrieve list of releases: ${error.message}`);
     }
 
-    if (release) {
-      console.log(`🎁Found a ${release.draft && 'draft ' || ''}release with id ${release.id} for tag '${release.tag_name}'`);
-    } else {
+    // if no non-draft release was found, look for the first draft release with the right tag in all releases
+    if (!release) {
+      try {
+        const iterator = github.paginate.iterator(github.rest.repos.listReleases, {
+          owner,
+          repo,
+          per_page
+        });
+        for await (const { data: releases } of iterator) {
+          release = releases.find(item => item.draft && item.tag_name === tag_name);
+          if (release) {
+            console.log(`🎁Found a draft release with id ${release.id} for tag '${release.tag_name}'`);
+            break;
+          }
+        }
+      } catch (error) {
+        throw new Error(`Unable to retrieve list of releases: ${error.message}`);
+      }
+    }
+
+    if (!release) {
       console.log(`💡No actual release found for tag '${tag_name}'`);
     }
 
