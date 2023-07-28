@@ -33,21 +33,25 @@ jobs:
         env:                                # Input parameters for release script
           owner: valleefred                 # owner of the repository (current owner by default)
           repo: test-github-actions         # repository (current repo by default)
-          tag_name: nightly                 # required tag for the release (created if not exist)
+          release_id: 666                   # id of the release to update, may be 'latest' to identify the latest release (required if no tag_name is given)
+          tag_name: nightly                 # tag to identify the release to update or to create a new release, created if not exist (required if no release_id is given)
           target_commitish: heads/main      # commit reference to create tag (required only if tag doesn't exist already)
-          release_name: Nightly release     # name for the release (value of tag_name by default)
-          delete_release: false             # set to true to always delete an existing release (false by default to delete it only if necessary)
-          append_body: true                 # in case of update, set to true to append or false to prepend new body to body of existing release (none by default to replace body) 
+          release_name: Nightly release     # name for the release (value of tag_name by default when creating a release)
+          delete_release: false             # set to true to always delete an existing release (false by default)
           body: |                           # none by default
             description body of the release
             maybe multilines
             **markdown** is allowed
+          after_body: |                     # usefull on update
+            more description appended after body
+          before_body: |                    # usefull on update
+            more description prepended before body
           draft: false                      # set to true to mark release as draft (false by default)
           prerelease: true                  # set to true to mark release as prerelease (false by default)
           discussion_category_name: Ideas   # create and link to the release a discussion of the specified category (none by default)
           generate_release_notes: true      # set to true to automatically generate release notes (false by default)
-          fail_on_files_errors: true        # set to true to fail script if error occurs while deleting or uploading assets (false by default)
-          files: |                          # optional glob patterns to identify assets (see https://github.com/actions/toolkit/tree/main/packages/glob)
+          fail_on_files_errors: true        # set to true to cause the script to fail if an error occurs while deleting or uploading assets (false by default)
+          files: |                          # optional glob patterns to identify files to upload as assets (see https://github.com/actions/toolkit/tree/main/packages/glob)
             *.txt
             !toto.txt
 
@@ -55,7 +59,7 @@ jobs:
           github-token: ${{ secrets.PAT }}  # optional separate GitHub token to enhance permissions (secrets.GITHUB_TOKEN by default)
           retries: 3                        # optional number of retries for request failures (none by default)
           script: |                         # minimum script to call release script
-            const release = require('.github/workflows/release.js')
+            const release = require('.github/release.js')
             await release({github, context, core, glob})
 
           # The following outputs can be accessed via ${{ steps.STEP-ID.outputs }} from subsequent steps:
@@ -65,6 +69,7 @@ jobs:
           #   assets      JSON array containing information about each uploaded asset, in the format given at https://docs.github.com/en/rest/releases/assets#get-a-release-asset (minus the uploader field)
 
       - name: Create tag and release
+        id: create_release
         uses: actions/github-script@v6
         env:
           tag_name: ${{ github.event_name != 'workflow_dispatch' && 'nightly' || inputs.tag_name }}
@@ -81,17 +86,15 @@ jobs:
         with:
           retries: 3
           script: |
-            const release = require('.github/workflows/release.js')
+            const release = require('.github/release.js')
             await release({github, context, core, glob})
 
       - name: Upload assets
         uses: actions/github-script@v6
         env:
-          tag_name: ${{ github.event_name != 'workflow_dispatch' && 'nightly' || inputs.tag_name }}
+          release_id: ${{ steps.create_release.outputs.release_id }}
           draft: false
-          prerelease: true
-          append_body: true
-          body: |
+          after_body: |
             Run: ${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}
           files: |
             *.zip
@@ -103,5 +106,5 @@ jobs:
         with:
           retries: 3
           script: |
-            const release = require('.github/workflows/release.js')
+            const release = require('.github/release.js')
             await release({github, context, core, glob})
